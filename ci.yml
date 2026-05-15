@@ -39,7 +39,7 @@ jobs:
       # Any test failure stops the pipeline here.
       # Build and deploy never run if tests fail.
       - name: Run all calculator tests
-        run: npm test
+        run: npm test  #npm test check in packge.json ("test": "react-scripts test --watchAll=false --coverage"),
         env:
           CI: true
 
