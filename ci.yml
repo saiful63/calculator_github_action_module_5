@@ -1,0 +1,122 @@
+# ──────────────────────────────────────────────────────────────
+# CI/CD Pipeline – React Calculator App
+# Self-hosted runner: AWS EC2
+# Deployment: nginx serving /var/www/calculator/
+# ──────────────────────────────────────────────────────────────
+
+name: React CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - '**'               # runs on every branch push
+  pull_request:
+    branches:
+      - main
+      - development
+
+jobs:
+
+  # ── Job 1: Test ───────────────────────────────────────────
+  test:
+    name: Run Calculator Tests
+    runs-on: self-hosted     # your AWS EC2 machine runs this
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Runs App.test.js automatically.
+      # Any test failure stops the pipeline here.
+      # Build and deploy never run if tests fail.
+      - name: Run all calculator tests
+        run: npm test
+        env:
+          CI: true
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  # ── Job 2: Build ──────────────────────────────────────────
+  build:
+    name: Build React App
+    runs-on: self-hosted
+    needs: test              # only runs if all tests passed
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          CI: false          # false so lint warnings don't fail the build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: react-build
+          path: build/
+          retention-days: 7
+
+  # ── Job 3: Deploy ─────────────────────────────────────────
+  deploy:
+    name: Deploy to nginx
+    runs-on: self-hosted
+    needs: build             # only runs if build passed
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          CI: false
+
+      # Clear old files from nginx web root
+      - name: Clear old deployment
+        run: sudo rm -rf /var/www/calculator/*
+
+      # Copy new build files to nginx web root
+      - name: Deploy build to nginx
+        run: sudo cp -r build/. /var/www/calculator/
+
+      # Fix file permissions so nginx can read them
+      - name: Set correct permissions
+        run: sudo chown -R www-data:www-data /var/www/calculator/
+
+      - name: Deployment complete
+        run: echo "Deployed successfully to /var/www/calculator/"
